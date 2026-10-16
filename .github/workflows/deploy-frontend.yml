@@ -1,0 +1,90 @@
+name: Reusable static frontend deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      node-version:
+        type: string
+        default: '24'
+      dist-path:
+        type: string
+        default: dist
+    secrets:
+      SSH_PRIVATE_KEY:
+        required: false
+      SSH_KNOWN_HOSTS:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.repository }}-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: (inputs.environment == 'staging' && github.ref == 'refs/heads/staging') || (inputs.environment == 'production' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing $name in the selected GitHub environment"
+              exit 1
+            fi
+          done
+          [[ "$DEPLOY_PATH" =~ ^/var/www/[a-zA-Z0-9._/-]+$ && "$DEPLOY_PATH" != *'..'* ]] || {
+            echo "::error::Invalid DEPLOY_PATH"
+            exit 1
+          }
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy release
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DIST_PATH: ${{ inputs.dist-path }}
+        run: |
+          set -euo pipefail
+          PORT="${DEPLOY_PORT:-22}"
+          [[ "$PORT" =~ ^[0-9]+$ ]] || exit 1
+          [[ -d "$DIST_PATH" ]] || { echo "::error::Missing build output"; exit 1; }
+          RELEASE="${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}"
+          TARGET="${DEPLOY_PATH%/}/releases/$RELEASE"
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$TARGET'"
+          rsync -az --delete -e "ssh -o BatchMode=yes -p $PORT" "$DIST_PATH/" "$DEPLOY_USER@$DEPLOY_HOST:$TARGET/"
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "ln -s '$TARGET' '${DEPLOY_PATH%/}/current.next' && mv -Tf '${DEPLOY_PATH%/}/current.next' '${DEPLOY_PATH%/}/current'"
