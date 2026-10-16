@@ -1,0 +1,8 @@
+{
+  "name": "Shayou frontend deployment",
+  "description": "Deploy a static frontend to staging and production using a shared workflow.",
+  "iconName": "octicon rocket",
+  "categories": [
+    "Deployment"
+  ]
+}
