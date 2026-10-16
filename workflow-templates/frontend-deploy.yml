@@ -1,0 +1,24 @@
+name: Frontend staging and production
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    if: github.ref == 'refs/heads/staging'
+    uses: shayu-company/.github/.github/workflows/deploy-frontend.yml@main
+    with:
+      environment: staging
+    secrets: inherit
+
+  production:
+    if: github.ref == 'refs/heads/main'
+    uses: shayu-company/.github/.github/workflows/deploy-frontend.yml@main
+    with:
+      environment: production
+    secrets: inherit
