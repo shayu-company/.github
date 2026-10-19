@@ -1,0 +1,39 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to deploy
+        type: choice
+        options: [fullstack, frontend, backend]
+        default: fullstack
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate changes
+    uses: ./.github/workflows/ci.yml
+    with:
+      component: ${{ github.event_name == 'workflow_dispatch' && inputs.component || 'auto' }}
+  deploy-frontend:
+    name: Deploy frontend
+    needs: validate
+    if: needs.validate.outputs.frontend == 'true'
+    uses: shayu-company/.github/.github/workflows/deploy-frontend.yml@main
+    with:
+      environment: staging
+      dist-path: frontend/dist
+    secrets: inherit
+  deploy-backend:
+    name: Deploy backend
+    needs: validate
+    if: needs.validate.outputs.backend == 'true'
+    uses: shayu-company/.github/.github/workflows/deploy-node.yml@main
+    with:
+      environment: staging
+    secrets: inherit
