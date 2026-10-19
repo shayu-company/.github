@@ -1,0 +1,8 @@
+{
+  "name": "Shayu · GitHub Pages (static)",
+  "description": "Static frontend on GitHub Pages, with CI and automated production deployment.",
+  "iconName": "octicon rocket",
+  "categories": [
+    "Deployment"
+  ]
+}
