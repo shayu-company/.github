@@ -1,0 +1,8 @@
+{
+  "name": "Shayu · VPS full-stack",
+  "description": "Selective frontend and Node.js backend staging deployments. Requires ci.yml.",
+  "iconName": "octicon rocket",
+  "categories": [
+    "Deployment"
+  ]
+}
