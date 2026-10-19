@@ -24,6 +24,8 @@ jobs:
     name: Deploy frontend
     needs: validate
     if: needs.validate.outputs.frontend == 'true'
+    permissions:
+      contents: read
     uses: shayu-company/.github/.github/workflows/deploy-frontend.yml@main
     with:
       environment: staging
