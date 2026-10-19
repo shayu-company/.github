@@ -1,38 +1,49 @@
-# Shayou shared GitHub Actions
+# Shayu Company — GitHub Actions
 
-Organization-wide workflows and workflow templates.
+Reusable deployment workflows and GitHub Actions workflow starters for Shayu projects.
 
-## Reusable workflow
+## Supported application types
 
-`.github/workflows/deploy-frontend.yml` builds a static frontend with Node.js 24 and deploys versioned releases over SSH/rsync. It accepts `environment` (staging or production), `node-version` and `dist-path`.
-
-## GitHub environments (in the calling application repository)
-
-Configure **staging** and **production** environments. Each requires:
-
-| Type | Name | Meaning |
+| Application template | GitHub Pages | VPS / other SSH server |
 | --- | --- | --- |
-| Variable | `DEPLOY_HOST` | VPS address |
-| Variable | `DEPLOY_USER` | Restricted deploy account |
-| Variable | `DEPLOY_PORT` | Optional SSH port, defaults to 22 |
-| Variable | `DEPLOY_PATH` | Pre-provisioned directory under /var/www |
-| Secret | `SSH_PRIVATE_KEY` | Dedicated SSH deploy key |
-| Secret | `SSH_KNOWN_HOSTS` | Verified SSH host key entry |
+| `template-static` (HTML / CSS / JS) | Yes | Yes |
+| `template-angular` | Static build only | Yes |
+| `template-static-node` (static + Express) | No | Yes |
+| `template-angular-node` (Angular + Express) | No | Yes |
 
-Staging runs from the `staging` branch and production from `main`. A manual dispatch on either branch also works.
+**Hosting is exclusive per application:** a GitHub Pages application is frontend-only. A server-hosted application may contain frontend, backend, or both. Do not generate a GitHub Pages frontend + VPS backend combination.
 
-This initial workflow **does not provision Nginx, DNS, SSL certificates or server permissions**. The server must already expose the application directory and Nginx must serve the `current` symlink. The workflow uploads to `releases/<sha>-<run_id>` then switches `current` after upload. Retention/rollback management is a later step.
+## Repository naming convention
 
-## Using the template
+- Application starters: `template-static`, `template-angular`, `template-static-node`, `template-angular-node`.
+- Central workflows: `.github/workflows/deploy-pages.yml`, `deploy-frontend.yml`, `deploy-node.yml`.
+- GitHub Actions starter templates: `workflow-templates/pages.yml`, `vps-static.yml`, `vps-fullstack.yml`, each with a matching `.properties.json`.
 
-The `workflow-templates/` directory provides a GitHub Actions starter. Alternatively, create a repository from the private `shayu-company/template-frontend` template, which already includes its caller workflow and CI.
+## Standard workflow layout in generated repositories
 
-For production use, pin shared workflows and third-party actions to immutable revisions. Never commit SSH keys. Verify host fingerprints independently rather than blindly trusting ssh-keyscan.
+```text
+.github/workflows/
+  ci.yml
+  deploy-staging.yml
+  deploy-production.yml
+```
 
-## Full-stack Node.js starter
+Jobs follow Control Room conventions: `detect-changes`, `ci-frontend`, `ci-backend`, `deploy-frontend`, `deploy-backend` (omit irrelevant jobs). The target application template owns the stack-specific build and validation steps. Deployment uses reusable workflows in this repository where appropriate.
 
-The organization also offers `workflow-templates/fullstack-deploy.yml`, with selective frontend/backend validation and deployment for `staging` and `main`. It is offered alongside the existing static-frontend template and does not modify it.
+- GitHub Pages uses `main` and `deploy-production.yml`. Staging is optional and not provisioned by default. Configure **Settings → Pages → Build and deployment → GitHub Actions**.
+- VPS applications use `staging` and `main` for deployments to separate GitHub Environments. Never deploy production from staging.
+- Starter workflows in `workflow-templates/` are examples; a full-stack starter requires its own `ci.yml` and production equivalent in the application template. They are not a replacement for those files.
 
-**Important:** Before using this starter, copy `workflow-templates/fullstack-ci.yml.example` to `.github/workflows/ci.yml` in the application repository. The deployment starter calls it using `uses: ./.github/workflows/ci.yml`. The starter assumes `frontend/` (with `check`, `format:check`, `test`, `build`, `smoke:build` scripts), `backend/` (`npm test`, `src/server.js`), Node.js 24, and a `frontend/dist` build output. Adjust the sample for different frameworks or layouts.
+## Reusable workflows
 
-For each GitHub Environment (`staging` and `production`), configure variables `DEPLOY_HOST`, `DEPLOY_USER`, optional `DEPLOY_PORT`, `FRONTEND_PATH`, `BACKEND_PATH`, `API_PORT`, and `PM2_APP_NAME`; configure secrets `SSH_PRIVATE_KEY` and `SSH_KNOWN_HOSTS`. Deployment paths must exist under `/var/www`, and the server must already have Nginx, PM2, Node.js and any `.env` configured. Backend deployment preserves the existing `.env` and `node_modules` paths. This starter is a starting point, not a drop-in production deployment: validate the generated workflow and smoke-test before deploying, especially for database migrations and API compatibility.
+- `deploy-pages.yml`: consumes an artifact uploaded with `actions/upload-pages-artifact@v3` and deploys it with `actions/deploy-pages@v4`. Caller must grant `pages: write` and `id-token: write`.
+- `deploy-frontend.yml`: Node 24 build then SSH/rsync release deployment to a `current` symlink. Caller GitHub Environment vars: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, optional `DEPLOY_PORT`; secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`. The destination must already be provisioned.
+- `deploy-node.yml`: deploys an Express application via SSH/rsync and restarts PM2. Caller vars: `DEPLOY_HOST`, `DEPLOY_USER`, `BACKEND_PATH`, `API_PORT`, `PM2_APP_NAME`, optional `DEPLOY_PORT`; secrets `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`. The example assumes `backend/src/server.js`, `npm ci` and Node installed on the server; adjust for TypeScript/dist projects.
+
+Do not place credentials in repository templates. Verify SSH host fingerprints independently, protect production environments, and pin third-party actions and reusable workflows to immutable revisions when hardening for production.
+
+## Existing applications
+
+`vchaillo/control-room` and `vchaillo/velomassifmorvan` use local GitHub Actions workflows, with no calls to `shayu-company/.github` in the workflows reviewed on 19 October 2026. They have not been migrated; their functioning deployment pipelines remain untouched.
+
+The old `workflow-templates/frontend-deploy.*` and `fullstack-deploy.*` starters have been replaced by destination-oriented names. The historical `.github/workflows/deploy-frontend.yml` reusable workflow is retained to preserve compatibility.
