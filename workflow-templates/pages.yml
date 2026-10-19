@@ -1,0 +1,32 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  ci-frontend:
+    name: CI Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate static site
+        run: test -s index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy-frontend:
+    name: Deploy frontend
+    needs: ci-frontend
+    uses: shayu-company/.github/.github/workflows/deploy-pages.yml@main
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
