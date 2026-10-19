@@ -1,0 +1,90 @@
+name: Reusable Node.js backend deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      backend-path:
+        type: string
+        default: backend
+    secrets:
+      SSH_PRIVATE_KEY:
+        required: true
+      SSH_KNOWN_HOSTS:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-node-${{ github.repository }}-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy backend
+    if: (inputs.environment == 'staging' && github.ref == 'refs/heads/staging') || (inputs.environment == 'production' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate configuration
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          PATH_REMOTE: ${{ vars.BACKEND_PATH }}
+          PROCESS: ${{ vars.PM2_APP_NAME }}
+          PORT: ${{ vars.API_PORT }}
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for k in HOST USER PATH_REMOTE PROCESS PORT KEY KNOWN_HOSTS; do
+            [[ -n "${!k}" ]] || { echo "::error::Missing $k"; exit 1; }
+          done
+          [[ "$PATH_REMOTE" =~ ^/var/www/[a-zA-Z0-9._/-]+$ && "$PATH_REMOTE" != *'..'* ]] || exit 1
+          [[ "$PROCESS" =~ ^[a-zA-Z0-9_-]+$ && "$PORT" =~ ^[0-9]+$ ]] || exit 1
+          test -f "${{ inputs.backend-path }}/package.json"
+      - name: Configure SSH
+        env:
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Upload and restart backend
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          SSH_PORT: ${{ vars.DEPLOY_PORT }}
+          PATH_REMOTE: ${{ vars.BACKEND_PATH }}
+          PROCESS: ${{ vars.PM2_APP_NAME }}
+          API_PORT: ${{ vars.API_PORT }}
+          LOCAL_PATH: ${{ inputs.backend-path }}
+        run: |
+          set -euo pipefail
+          PORT="${SSH_PORT:-22}"
+          [[ "$PORT" =~ ^[0-9]+$ ]] || exit 1
+          ssh -o BatchMode=yes -p "$PORT" "$USER@$HOST" "mkdir -p '$PATH_REMOTE'"
+          rsync -az --delete --exclude='.env' --exclude='.env.*' --exclude='node_modules/' -e "ssh -o BatchMode=yes -p $PORT" "$LOCAL_PATH/" "$USER@$HOST:$PATH_REMOTE/"
+          ssh -o BatchMode=yes -p "$PORT" "$USER@$HOST" "bash -se -- '$PATH_REMOTE' '$PROCESS' '$API_PORT' '${{ inputs.environment }}'" <<'REMOTE'
+          set -euo pipefail
+          path="$1"; process="$2"; port="$3"; environment="$4"
+          export NVM_DIR="$HOME/.nvm"
+          [ ! -s "$NVM_DIR/nvm.sh" ] || . "$NVM_DIR/nvm.sh"
+          cd "$path"
+          npm ci --omit=dev
+          export HOST=127.0.0.1 PORT="$port" NODE_ENV="$environment"
+          if pm2 describe "$process" >/dev/null 2>&1; then
+            pm2 reload "$process" --update-env
+          else
+            pm2 start src/server.js --name "$process" --cwd "$path"
+          fi
+          pm2 save
+          REMOTE
