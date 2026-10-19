@@ -1,0 +1,8 @@
+{
+  "name": "Shayu · VPS static frontend",
+  "description": "Staging deployment for a static frontend, using a reusable workflow.",
+  "iconName": "octicon rocket",
+  "categories": [
+    "Deployment"
+  ]
+}
