@@ -28,3 +28,11 @@ This initial workflow **does not provision Nginx, DNS, SSL certificates or serve
 The `workflow-templates/` directory provides a GitHub Actions starter. Alternatively, create a repository from the private `shayu-company/template-frontend` template, which already includes its caller workflow and CI.
 
 For production use, pin shared workflows and third-party actions to immutable revisions. Never commit SSH keys. Verify host fingerprints independently rather than blindly trusting ssh-keyscan.
+
+## Full-stack Node.js starter
+
+The organization also offers `workflow-templates/fullstack-deploy.yml`, with selective frontend/backend validation and deployment for `staging` and `main`. It is offered alongside the existing static-frontend template and does not modify it.
+
+**Important:** Before using this starter, copy `workflow-templates/fullstack-ci.yml.example` to `.github/workflows/ci.yml` in the application repository. The deployment starter calls it using `uses: ./.github/workflows/ci.yml`. The starter assumes `frontend/` (with `check`, `format:check`, `test`, `build`, `smoke:build` scripts), `backend/` (`npm test`, `src/server.js`), Node.js 24, and a `frontend/dist` build output. Adjust the sample for different frameworks or layouts.
+
+For each GitHub Environment (`staging` and `production`), configure variables `DEPLOY_HOST`, `DEPLOY_USER`, optional `DEPLOY_PORT`, `FRONTEND_PATH`, `BACKEND_PATH`, `API_PORT`, and `PM2_APP_NAME`; configure secrets `SSH_PRIVATE_KEY` and `SSH_KNOWN_HOSTS`. Deployment paths must exist under `/var/www`, and the server must already have Nginx, PM2, Node.js and any `.env` configured. Backend deployment preserves the existing `.env` and `node_modules` paths. This starter is a starting point, not a drop-in production deployment: validate the generated workflow and smoke-test before deploying, especially for database migrations and API compatibility.
