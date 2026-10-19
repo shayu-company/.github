@@ -1,0 +1,17 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-frontend:
+    name: Deploy frontend
+    uses: shayu-company/.github/.github/workflows/deploy-frontend.yml@main
+    with:
+      environment: staging
+    secrets: inherit
