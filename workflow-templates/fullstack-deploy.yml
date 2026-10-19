@@ -94,4 +94,5 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
           rsync -az --delete --exclude='.env' --exclude='node_modules/' -e "ssh -o BatchMode=yes -p $PORT" backend/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ ! -s \"\$NVM_DIR/nvm.sh\" ] || . \"\$NVM_DIR/nvm.sh\"; cd \"$DEPLOY_PATH\" && npm ci --omit=dev && (pm2 describe \"$PM2_APP_NAME\" >/dev/null 2>&1 && pm2 reload \"$PM2_APP_NAME\" --update-env || HOST=127.0.0.1 PORT=$API_PORT NODE_ENV=$([[ \"$GITHUB_REF_NAME\" == main ]] && echo production || echo staging) pm2 start src/server.js --name \"$PM2_APP_NAME\" --cwd \"$DEPLOY_PATH\") && pm2 save'"
+          NODE_ENV_NAME="$([[ "$GITHUB_REF_NAME" == main ]] && echo production || echo staging)"
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ ! -s \"\$NVM_DIR/nvm.sh\" ] || . \"\$NVM_DIR/nvm.sh\"; cd \"$DEPLOY_PATH\" && npm ci --omit=dev && (pm2 describe \"$PM2_APP_NAME\" >/dev/null 2>&1 && pm2 reload \"$PM2_APP_NAME\" --update-env || HOST=127.0.0.1 PORT=$API_PORT NODE_ENV=$NODE_ENV_NAME pm2 start src/server.js --name \"$PM2_APP_NAME\" --cwd \"$DEPLOY_PATH\") && pm2 save'"
