@@ -1,0 +1,9 @@
+{
+  "name": "Shayu full-stack deployment",
+  "description": "Selective Node.js full-stack CI and VPS deployments for staging and production.",
+  "iconName": "octicon rocket",
+  "categories": [
+    "Deployment",
+    "Node"
+  ]
+}
