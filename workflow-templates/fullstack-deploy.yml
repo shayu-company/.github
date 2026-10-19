@@ -1,0 +1,99 @@
+name: Full-stack CI and deployment
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [staging, main]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to deploy
+        type: choice
+        options: [fullstack, frontend, backend]
+        default: fullstack
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fullstack-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate changes
+    uses: ./.github/workflows/ci.yml
+    with:
+      component: ${{ github.event_name == 'workflow_dispatch' && inputs.component || 'auto' }}
+
+  deploy-frontend:
+    name: Deploy frontend
+    needs: validate
+    if: github.event_name != 'pull_request' && needs.validate.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Deploy built frontend
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.FRONTEND_PATH }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            [[ -n "${!key}" ]] || { echo "::error::Missing $key"; exit 1; }
+          done
+          [[ "$DEPLOY_PATH" =~ ^/var/www/[a-zA-Z0-9._/-]+$ && "$DEPLOY_PATH" != *'..'* ]] || exit 1
+          PORT="${DEPLOY_PORT:-22}"
+          [[ "$PORT" =~ ^[0-9]+$ ]] || exit 1
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          rsync -az --delete -e "ssh -o BatchMode=yes -p $PORT" frontend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+  deploy-backend:
+    name: Deploy backend
+    needs: validate
+    if: github.event_name != 'pull_request' && needs.validate.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Node backend
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.BACKEND_PATH }}
+          API_PORT: ${{ vars.API_PORT }}
+          PM2_APP_NAME: ${{ vars.PM2_APP_NAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for key in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH API_PORT PM2_APP_NAME SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            [[ -n "${!key}" ]] || { echo "::error::Missing $key"; exit 1; }
+          done
+          [[ "$DEPLOY_PATH" =~ ^/var/www/[a-zA-Z0-9._/-]+$ && "$DEPLOY_PATH" != *'..'* ]] || exit 1
+          [[ "$API_PORT" =~ ^[0-9]+$ && "$PM2_APP_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] || exit 1
+          PORT="${DEPLOY_PORT:-22}"
+          [[ "$PORT" =~ ^[0-9]+$ ]] || exit 1
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          rsync -az --delete --exclude='.env' --exclude='node_modules/' -e "ssh -o BatchMode=yes -p $PORT" backend/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          ssh -o BatchMode=yes -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "bash -lc 'export NVM_DIR=\"\$HOME/.nvm\"; [ ! -s \"\$NVM_DIR/nvm.sh\" ] || . \"\$NVM_DIR/nvm.sh\"; cd \"$DEPLOY_PATH\" && npm ci --omit=dev && (pm2 describe \"$PM2_APP_NAME\" >/dev/null 2>&1 && pm2 reload \"$PM2_APP_NAME\" --update-env || HOST=127.0.0.1 PORT=$API_PORT NODE_ENV=${GITHUB_REF_NAME/main/production} pm2 start src/server.js --name \"$PM2_APP_NAME\" --cwd \"$DEPLOY_PATH\") && pm2 save'"
